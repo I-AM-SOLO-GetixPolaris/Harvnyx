@@ -37,8 +37,8 @@ Harvnyx 不仅仅是一个简单的命令解释器，它更类似于一个集成
    - `CommandManager` 动态扫描并加载当前目录下的 `.dll` 文件，自动注册其中的命令，并更新补全系统。
 7. **TaskManager(`Program.cs`):** 任务托管服务。跟踪由 Harvnyx 启动的进程和异步任务，为其分配 ID，便于用户通过 `tasks` 命令进行管理和监控。
 
-## 安全性说明
-[0.1.80-alpha.2 的错误](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/QuestionList/0.1.80-alpha.2.md)
+## [安全性说明](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/QuestionList)
+[0.1.80-alpha.2 的安全性说明](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/QuestionList/0.1.80-alpha.2.md)
 ## 安装教程
 ### 系统要求
 - **操作系统**：Windows 7 SP1 / Windows 10 / Windows 11（64位推荐）
@@ -48,7 +48,7 @@ Harvnyx 不仅仅是一个简单的命令解释器，它更类似于一个集成
 ### 安装方式
 
 #### 方式一:安装包安装
-1. 前往 [Releases](https://github.com/NORTHTECH-Group/Harvnyx/releases) 页面下载最新版本的 `Harvnyx.zip`
+1. 前往 [Releases](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program) 页面下载最新版本的 `Harvnyx.zip`
 2. 将压缩包解压到任意目录（例如 `C:\Harvnyx`）
 3. 进入解压后的文件夹，双击 `Harvnyx.exe` 即可运行
 
@@ -86,7 +86,7 @@ dotnet run --project Harvnyx.csproj
 ## 参与贡献
 感谢您对 Harvnyx 的兴趣！我们欢迎任何形式的贡献，包括但不限于：报告 Bug、提出新功能、改进文档、提交代码。
 ### 行为准则
-请遵守 [许可证](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/edit/master/LICENSE.txr)内容，保持友善和尊重。
+请遵守 [许可证](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/edit/master/LICENSE.txt)内容，保持友善和尊重。
 ### 如何贡献
 #### 1. 报告 Bug 或建议新功能
 - 在 [Issues](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/issues) 页面搜索是否已存在相同问题
@@ -144,7 +144,7 @@ print.warning("命令/严重程度", "问题描述");
 print.success("命令/严重程度(可选)", "问题描述");
 ```
 ---
-## 源代码
+## [源代码](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode)
 [0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode/0.1.80-alpha.2)
-## 程序
-[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/Program/0.1.80-alpha.2.zip)
+## [程序](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program)
+[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program/Harvnyx-0.1.80-alpha.2.zip)
