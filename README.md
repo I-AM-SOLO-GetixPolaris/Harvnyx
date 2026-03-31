@@ -147,4 +147,4 @@ print.success("命令/严重程度(可选)", "问题描述");
 ## 源代码
 [0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode/0.1.80-alpha.2)
 ## 程序
-[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/Program/0.1.80-alpha.2)
+[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/Program/0.1.80-alpha.2.zip)
