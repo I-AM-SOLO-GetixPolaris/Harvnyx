@@ -86,7 +86,7 @@ dotnet run --project Harvnyx.csproj
 ## 参与贡献
 感谢您对 Harvnyx 的兴趣！我们欢迎任何形式的贡献，包括但不限于：报告 Bug、提出新功能、改进文档、提交代码。
 ### 行为准则
-请遵守 [许可证](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/edit/master/LICENSE.txt)内容，保持友善和尊重。
+请遵守 [许可证](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/LICENSE.txt)内容，保持友善和尊重。
 ### 如何贡献
 #### 1. 报告 Bug 或建议新功能
 - 在 [Issues](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/issues) 页面搜索是否已存在相同问题
