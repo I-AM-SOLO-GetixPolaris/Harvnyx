@@ -1,0 +1,80 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<!-- ========== 内联任务：读取并清洗 version.txt ========== -->
+	<UsingTask TaskName="GetCleanBuildNumber" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+		<ParameterGroup>
+			<VersionFile ParameterType="System.String" Required="true" />
+			<BuildNumber ParameterType="System.String" Output="true" />
+		</ParameterGroup>
+		<Task>
+			<Using Namespace="System.IO" />
+			<Code Type="Fragment" Language="cs">
+				<![CDATA[
+                if (File.Exists(VersionFile))
+                {
+                    string content = File.ReadAllText(VersionFile).Trim();
+                    var match = System.Text.RegularExpressions.Regex.Match(content, @"\d+");
+                    BuildNumber = match.Success ? match.Value : "0";
+                }
+                else
+                {
+                    BuildNumber = "0";
+                }
+                ]]>
+			</Code>
+		</Task>
+	</UsingTask>
+
+	<!-- ========== 构建前获取 BuildNumber 并设置版本号 ========== -->
+	<Target Name="GetBuildNumberAndSetVersion" BeforeTargets="BeforeBuild">
+		<!-- 如果存在 CI 环境变量，直接使用它 -->
+		<PropertyGroup Condition="'$(BUILD_BUILDID)' != ''">
+			<BuildNumber>$(BUILD_BUILDID)</BuildNumber>
+		</PropertyGroup>
+
+		<!-- 本地构建：调用内联任务读取文件，结果存入 BuildNumber 属性 -->
+		<GetCleanBuildNumber VersionFile="version.txt" Condition="'$(BUILD_BUILDID)' == ''">
+			<Output TaskParameter="BuildNumber" PropertyName="BuildNumber" />
+		</GetCleanBuildNumber>
+
+		<!-- 设置版本前缀、后缀，并显式设置最终 Version 属性 -->
+		<PropertyGroup>
+			<VersionPrefix>0.1.$(BuildNumber)</VersionPrefix>
+			<VersionSuffix>alpha.2</VersionSuffix>
+			<Version>$(VersionPrefix)-$(VersionSuffix)</Version>
+		</PropertyGroup>
+
+		<Message Text="本次构建版本号：$(VersionPrefix)-$(VersionSuffix)" Importance="high" />
+	</Target>
+
+	<!-- ========== 构建后递增版本号（仅本地） ========== -->
+	<Target Name="IncrementBuildNumber" AfterTargets="Build" Condition="'$(BUILD_BUILDID)' == ''">
+		<PropertyGroup>
+			<NextBuildNumber>$([MSBuild]::Add($(BuildNumber), 1))</NextBuildNumber>
+		</PropertyGroup>
+		<WriteLinesToFile File="version.txt" Lines="$(NextBuildNumber)" Overwrite="true" />
+		<Message Text="版本已递增至 $(NextBuildNumber)，下次构建将使用 0.1.$(NextBuildNumber)-alpha.1" Importance="high" />
+	</Target>
+
+	<!-- 编译后打印完整版本（可选） -->
+	<Target Name="PrintVersion" AfterTargets="Build">
+		<Message Text="最终版本：$(Version)" Importance="high" />
+	</Target>
+
+	<Target Name="Print1" AfterTargets="Build">
+		<Message Text="Fuck the Version, fuck it! fuck! fucking piece of shit!" Importance="high" />
+	</Target>
+
+	<ItemGroup>
+		<PackageReference Include="SSH.NET" Version="2025.1.0" />
+		<PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.3" />
+		<PackageReference Include="System.Management" Version="10.0.3" />
+	</ItemGroup>
+</Project>
