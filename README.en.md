@@ -87,7 +87,7 @@ Simply delete the program folder. No registry entries remain.
 ## Contributing
 Thank you for your interest in Harvnyx! We welcome any form of contribution, including but not limited to: reporting bugs, suggesting new features, improving documentation, and submitting code.
 ### Code of Conduct
-Please abide by the [license](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/edit/master/LICENSE.txt) and remain friendly and respectful.
+Please abide by the [license](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/LICENSE.txt) and remain friendly and respectful.
 ### How to Contribute
 #### 1. Report a Bug or Suggest a Feature
 - Search the [Issues](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/issues) page to see if the same problem already exists.
