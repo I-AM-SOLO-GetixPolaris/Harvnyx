@@ -145,7 +145,4 @@ print.warning("command/severity", "problem description");
 print.success("command/severity(optional)", "problem description");
 ```
 ---
-## [Source Code](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode)
-[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode/0.1.80-alpha.2)
-## [Program](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program)
-[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program/Harvnyx-0.1.80-alpha.2.zip)
+## [Download](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Historical.md)
