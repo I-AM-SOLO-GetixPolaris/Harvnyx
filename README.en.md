@@ -1,5 +1,6 @@
 # Harvnyx
 [README for CN](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/README.md) [README for EN](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/README.en.md) [README for RU](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/README.ru.md)
+[Download](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Historical.md)
 > **Note:** This list focuses on stability, resource management, logic flaws, and maintainability issues. **Security-related items (e.g., plaintext passwords, plugin validation) are not included for now.** Community developers are requested to address them in order of priority.
 
 > **Warning:** Do not run this program on your primary computer, as it currently does not guarantee that information will not be leaked!
@@ -145,4 +146,3 @@ print.warning("command/severity", "problem description");
 print.success("command/severity(optional)", "problem description");
 ```
 ---
-## [Download](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Historical.md)
