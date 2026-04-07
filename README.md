@@ -144,9 +144,4 @@ print.warning("命令/严重程度", "问题描述");
 print.success("命令/严重程度(可选)", "问题描述");
 ```
 ---
-## [源代码](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode)
-[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode/0.1.80-alpha.2)
-[0.1.91-alpha.3](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/tree/master/SourceCode/0.1.91-alpha.3.zip)
-## [程序](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program)
-[0.1.80-alpha.2](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program/Harvnyx-0.1.80-alpha.2.zip)
-[0.1.91-alpha.3](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Program/Harvnyx-0.1.91-alpha.3.zip)
+## [下载](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Historical.md)
