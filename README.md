@@ -1,5 +1,6 @@
 # Harvnyx
 [README for CN](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/README.md) [README for EN](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/README.en.md) [README for RU](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/README.ru.md)
+[下载](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Historical.md)
 > **说明:** 本清单聚焦于稳定性、资源管理、逻辑缺陷和可维护性问题，**暂不包含安全性相关条目**（如密码明文、插件校验等）。请社区开发者按优先级依次处理。
 
 > **注意:** 不要在您的主要计算机中运行该程序，因为该程序目前未确保信息不会泄露！
@@ -144,4 +145,3 @@ print.warning("命令/严重程度", "问题描述");
 print.success("命令/严重程度(可选)", "问题描述");
 ```
 ---
-## [下载](https://github.com/I-AM-SOLO-GetixPolaris/Harvnyx/blob/master/Historical.md)
