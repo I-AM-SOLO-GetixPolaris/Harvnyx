@@ -1,0 +1,11 @@
+{
+  "test": {
+    "Name": "test",
+    "Version": "1.0.0",
+    "Description": "testtext",
+    "Size": 102400,
+    "InstalledSize": 512000,
+    "Dependencies": [],
+    "Conflicts": []
+  }
+}
