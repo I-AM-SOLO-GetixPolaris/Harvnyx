@@ -47,7 +47,7 @@
 		<!-- 设置版本前缀、后缀，并显式设置最终 Version 属性 -->
 		<PropertyGroup>
 			<VersionPrefix>0.1.$(BuildNumber)</VersionPrefix>
-			<VersionSuffix>alpha.2</VersionSuffix>
+			<VersionSuffix>alpha.3</VersionSuffix>
 			<Version>$(VersionPrefix)-$(VersionSuffix)</Version>
 		</PropertyGroup>
 

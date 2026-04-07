@@ -106,7 +106,7 @@ namespace Harvnyx
             Console.Write(randomMessage);
             Console.ResetColor();
             Console.WriteLine(" ]");
-            Console.WriteLine($"    版本: {System.Reflection.Assembly.GetExecutingAssembly().GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion}");
+            Console.WriteLine($"    版本: {System.Reflection.Assembly.GetExecutingAssembly().GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0]}");
             Console.WriteLine("    Harvnyx已启动 - 按下 Ctrl + Z 重新打印该抬头");
             Console.WriteLine("============================= Harvnyx 输出消息 ==============================");
             Console.WriteLine();
@@ -523,7 +523,7 @@ namespace Harvnyx
             if (string.IsNullOrEmpty(currentInput))
                 return null;
 
-            // 历史记录建议（不变）
+            // 历史记录建议
             for (int i = _commandHistory.Count - 1; i >= 0; i--)
             {
                 string cmd = _commandHistory[i];
@@ -555,21 +555,62 @@ namespace Harvnyx
             if (!CommandCompleter.InternalCommands.Contains(contextCmd))
                 return null;
 
+            // 尝试获取子命令
+            string subCmd = null;
+            int mainIndex = nonEmptyParts.IndexOf(contextCmd);
+            if (mainIndex >= 0 && mainIndex + 1 < nonEmptyParts.Count)
+            {
+                string candidate = nonEmptyParts[mainIndex + 1];
+                if (!candidate.StartsWith("-"))
+                    subCmd = candidate;
+            }
+
             string lastWord = nonEmptyParts.Last();
             string prevWord = nonEmptyParts.Count >= 2 ? nonEmptyParts[nonEmptyParts.Count - 2] : null;
 
+            // ---- 新增：子命令参数建议 ----
+            if (subCmd != null)
+            {
+                var subParams = CommandCompleter.GetSubCommandOptions(contextCmd, subCmd);
+                if (subParams != null && subParams.Count > 0)
+                {
+                    if (endsWithSpace)
+                    {
+                        // 有尾随空格，准备输入下一个子参数
+                        if (prevWord != null && subParams.Contains(prevWord))
+                        {
+                            int idx = subParams.IndexOf(prevWord);
+                            int nextIdx = (idx + 1) % subParams.Count;
+                            if (nextIdx != idx)
+                                return subParams[nextIdx];
+                        }
+                        else if (subParams.Count > 0)
+                        {
+                            return subParams[0];
+                        }
+                    }
+                    else
+                    {
+                        // 正在输入当前单词，进行前缀匹配
+                        var matches = subParams.Where(p => p.StartsWith(lastWord, StringComparison.OrdinalIgnoreCase)).ToList();
+                        if (matches.Count > 0 && matches[0].Length > lastWord.Length)
+                            return matches[0].Substring(lastWord.Length);
+                    }
+                }
+            }
+            // ---- 子命令参数建议结束 ----
 
+            // 原有建议逻辑（选项值、子命令）
             if (endsWithSpace)
             {
                 // 有尾随空格：检查最后一个单词是否为有值选项
                 if (CommandCompleter.OptionValues.TryGetValue(contextCmd, out var optionDict) &&
                     optionDict.TryGetValue(lastWord, out var values))
                 {
-                    return values[0]; // 建议第一个值
+                    return values[0];
                 }
                 else
                 {
-                    // 否则建议第一个子命令
                     if (CommandCompleter.SubCommands.TryGetValue(contextCmd, out var allSubs) && allSubs.Count > 0)
                         return allSubs[0];
                     return null;
@@ -581,9 +622,6 @@ namespace Harvnyx
                 if (prevWord != null && CommandCompleter.OptionValues.TryGetValue(contextCmd, out var optionDict) &&
                     optionDict.TryGetValue(prevWord, out var values))
                 {
-                    // 当前单词是值的一部分
-                    if (values.Contains(lastWord))
-                        return null; // 已完整
                     var matches = values.Where(v => v.StartsWith(lastWord, StringComparison.OrdinalIgnoreCase)).ToList();
                     if (matches.Count > 0 && matches[0].Length > lastWord.Length)
                         return matches[0].Substring(lastWord.Length);
@@ -591,11 +629,8 @@ namespace Harvnyx
                 }
                 else
                 {
-                    // 当前单词是选项的一部分
                     if (!CommandCompleter.SubCommands.TryGetValue(contextCmd, out var allSubs) || allSubs.Count == 0)
                         return null;
-                    if (allSubs.Contains(lastWord))
-                        return null; // 已完整
                     var matches = allSubs.Where(s => s.StartsWith(lastWord, StringComparison.OrdinalIgnoreCase)).ToList();
                     if (matches.Count > 0 && matches[0].Length > lastWord.Length)
                         return matches[0].Substring(lastWord.Length);
@@ -756,6 +791,8 @@ namespace Harvnyx
             return result;
         }
 
+        
+
         /*
          * 补全逻辑
          */
@@ -768,31 +805,84 @@ namespace Harvnyx
             if (nonEmptyParts.Count == 0)
                 return (null, false);
 
-            string contextCmd = GetCurrentContextCommand(nonEmptyParts, endsWithSpace);
-            if (string.IsNullOrEmpty(contextCmd))
+            // 获取当前主命令（例如 "ept"）
+            string mainCmd = GetCurrentContextCommand(nonEmptyParts, endsWithSpace);
+            if (string.IsNullOrEmpty(mainCmd))
                 return (null, false);
 
-            if (!CommandCompleter.InternalCommands.Contains(contextCmd))
+            if (!CommandCompleter.InternalCommands.Contains(mainCmd))
                 return (null, false);
+
+            // 尝试找到当前输入的子命令（主命令后的第一个单词）
+            string subCmd = null;
+            int mainIndex = nonEmptyParts.IndexOf(mainCmd);
+            if (mainIndex >= 0 && mainIndex + 1 < nonEmptyParts.Count)
+            {
+                string candidate = nonEmptyParts[mainIndex + 1];
+                // 如果 candidate 不是选项（不以 - 开头），则认为是子命令
+                if (!candidate.StartsWith("-"))
+                    subCmd = candidate;
+            }
 
             string lastWord = nonEmptyParts.Last();
             string prevWord = nonEmptyParts.Count >= 2 ? nonEmptyParts[nonEmptyParts.Count - 2] : null;
 
+            // ---- 新增：处理子命令级别的子参数 ----
+            if (subCmd != null)
+            {
+                var subParams = CommandCompleter.GetSubCommandOptions(mainCmd, subCmd);
+                if (subParams != null && subParams.Count > 0)
+                {
+                    // 情况：尾随空格，准备输入下一个单词（应该是子参数）
+                    if (endsWithSpace)
+                    {
+                        // 如果上一个单词（即刚输入的）已经是一个子参数，则循环下一个
+                        if (prevWord != null && subParams.Contains(prevWord))
+                        {
+                            int idx = subParams.IndexOf(prevWord);
+                            int nextIdx = (idx + 1) % subParams.Count;
+                            return (subParams[nextIdx], false);
+                        }
+                        // 否则，补全第一个子参数
+                        return (subParams[0], false);
+                    }
+                    else
+                    {
+                        // 当前正在输入子参数的部分
+                        var matches = subParams.Where(p => p.StartsWith(lastWord, StringComparison.OrdinalIgnoreCase)).ToList();
+                        if (matches.Count > 0)
+                        {
+                            if (matches.Contains(lastWord))
+                            {
+                                // 已完整，循环到下一个
+                                int idx = subParams.IndexOf(lastWord);
+                                int nextIdx = (idx + 1) % subParams.Count;
+                                return (subParams[nextIdx], false);
+                            }
+                            else
+                            {
+                                // 部分匹配，补全第一个
+                                return (matches[0], false);
+                            }
+                        }
+                    }
+                }
+            }
+            // ---- 子参数处理结束 ----
+
+            // 原有逻辑：处理主命令的直接子命令/选项
             // 情况1：有尾随空格，准备输入下一个单词
             if (endsWithSpace)
             {
-                // 检查最后一个单词（刚输入的单词）是否是有值选项
-                if (CommandCompleter.OptionValues.TryGetValue(contextCmd, out var optionDict) &&
+                // 检查最后一个单词是否是有值选项
+                if (CommandCompleter.OptionValues.TryGetValue(mainCmd, out var optionDict) &&
                     optionDict.TryGetValue(lastWord, out var values))
                 {
-                    Debug.WriteLine("сука ёбаный пробел");
-                    // 有值选项，补全第一个值
                     return (values[0], false);
                 }
                 else
                 {
-                    // 普通子命令补全（基于 lastWord 循环下一个选项）
-                    if (!CommandCompleter.SubCommands.TryGetValue(contextCmd, out var allSubs) || allSubs.Count == 0)
+                    if (!CommandCompleter.SubCommands.TryGetValue(mainCmd, out var allSubs) || allSubs.Count == 0)
                         return (null, false);
                     int index = allSubs.FindIndex(s => s == lastWord);
                     int nextIndex = (index == -1) ? 0 : (index + 1) % allSubs.Count;
@@ -803,48 +893,40 @@ namespace Harvnyx
             else
             {
                 // 检查上一个单词是否是有值选项
-                if (prevWord != null && CommandCompleter.OptionValues.TryGetValue(contextCmd, out var optionDict) &&
+                if (prevWord != null && CommandCompleter.OptionValues.TryGetValue(mainCmd, out var optionDict) &&
                     optionDict.TryGetValue(prevWord, out var values))
                 {
-                    // 当前单词是值的一部分
                     var matches = values.Where(v => v.StartsWith(lastWord, StringComparison.OrdinalIgnoreCase)).ToList();
                     if (matches.Count > 0)
                     {
-                        // 如果当前单词完全匹配某个值
                         if (matches.Contains(lastWord))
                         {
-                            // 在当前值的列表中循环下一个值
                             int currentIndex = values.FindIndex(v => string.Equals(v, lastWord, StringComparison.OrdinalIgnoreCase));
                             int nextIndex = (currentIndex + 1) % values.Count;
-                            return (values[nextIndex], false); // 直接替换当前单词为下一个值，不追加空格
+                            return (values[nextIndex], false);
                         }
                         else
                         {
-                            // 部分匹配，补全第一个完整值
                             return (matches[0], false);
                         }
                     }
-                    // 没有匹配的值，返回 null（或尝试补全下一个选项）
                     return (null, false);
                 }
                 else
                 {
-                    // 当前单词可能是选项的一部分
-                    if (!CommandCompleter.SubCommands.TryGetValue(contextCmd, out var allSubs) || allSubs.Count == 0)
+                    if (!CommandCompleter.SubCommands.TryGetValue(mainCmd, out var allSubs) || allSubs.Count == 0)
                         return (null, false);
                     var matches = allSubs.Where(s => s.StartsWith(lastWord, StringComparison.OrdinalIgnoreCase)).ToList();
                     if (matches.Count > 0)
                     {
                         if (matches.Contains(lastWord))
                         {
-                            // 当前单词已经是完整选项 → 循环下一个选项
                             int index = allSubs.FindIndex(s => s == lastWord);
                             int nextIndex = (index + 1) % allSubs.Count;
                             return (allSubs[nextIndex], false);
                         }
                         else
                         {
-                            // 部分匹配，补全第一个完整选项
                             return (matches[0], false);
                         }
                     }
@@ -1212,12 +1294,11 @@ namespace Harvnyx
 
         public static void LoadCommands(string directory = ".")
         {
-            var (cmdDict, mainList, subDict, optDict, cmdDetails) = ScanCommands(directory);
+            var (cmdDict, mainList, subDict, optDict, subCmdOpts, cmdDetails) = ScanCommands(directory);
             UpdateCommandDictionary(cmdDict, cmdDetails);
-            CommandCompleter.UpdateFromPlugins(mainList, subDict, optDict);
+            CommandCompleter.UpdateFromPlugins(mainList, subDict, optDict, subCmdOpts);  // 传入 subCmdOpts
             _previousCommands = new HashSet<string>(cmdDict.Keys, StringComparer.OrdinalIgnoreCase);
 
-            // 输出每个命令的详细信息
             foreach (var detail in cmdDetails)
             {
                 PrintCommandDetails(detail);
@@ -1254,30 +1335,41 @@ namespace Harvnyx
         }
 
         private static (Dictionary<string, ICommand> commands,
-                        List<string> mainList,
-                        Dictionary<string, List<string>> subDict,
-                        Dictionary<string, Dictionary<string, List<string>>> optDict,
-                        List<(string cmdName, string dllPath, long fileSize, string version)> cmdDetails)
-            ScanCommands(string directory)
+            List<string> mainList,
+            Dictionary<string, List<string>> subDict,
+            Dictionary<string, Dictionary<string, List<string>>> optDict,
+            Dictionary<string, Dictionary<string, List<string>>> subCmdOpts,
+            List<(string cmdName, string dllPath, long fileSize, string version)> cmdDetails)
+        ScanCommands(string directory)
         {
             var commands = new Dictionary<string, ICommand>(StringComparer.OrdinalIgnoreCase);
             var mainList = new List<string>();
             var subDict = new Dictionary<string, List<string>>();
             var optDict = new Dictionary<string, Dictionary<string, List<string>>>();
-            var cmdDetails = new List<(string cmdName, string dllPath, long fileSize, string version)>();
+            var subCmdOpts = new Dictionary<string, Dictionary<string, List<string>>>();
+            var cmdDetails = new List<(string, string, long, string)>();
 
             string searchPath = string.IsNullOrEmpty(directory) || directory == "."
                 ? Environment.CurrentDirectory
                 : directory;
 
             if (!Directory.Exists(searchPath))
-                return (commands, mainList, subDict, optDict, cmdDetails);
+                return (commands, mainList, subDict, optDict, subCmdOpts, cmdDetails);
 
             foreach (string dllPath in Directory.GetFiles(searchPath, "*.dll"))
             {
                 try
                 {
                     Assembly asm = Assembly.LoadFrom(dllPath);
+
+                    // 检查是否为插件模块（必须带有 PluginModuleAttribute）
+                    bool isPluginModule = asm.GetCustomAttribute<PluginModuleAttribute>() != null;
+
+                    // 可选：增加配置项兼容旧插件（默认 false 表示强制要求标记）
+                    bool allowUnmarked = ConfigProcessor.AllowUnmarkedPlugins;
+                    if (!isPluginModule && !allowUnmarked)
+                        continue;   // 不是插件模块，跳过
+
                     var fileInfo = new FileInfo(dllPath);
                     long fileSize = fileInfo.Length;
                     string assemblyVersion = asm.GetName().Version?.ToString();
@@ -1285,7 +1377,11 @@ namespace Harvnyx
                     if (infoAttr != null)
                         assemblyVersion = infoAttr.InformationalVersion;
 
-                    // 在 ScanCommands 方法中，遍历 DLL 的每个类型时：
+                    // 如果程序集有 PluginModuleAttribute，可使用其指定的名称/版本覆盖
+                    var pluginAttr = asm.GetCustomAttribute<PluginModuleAttribute>();
+                    string moduleName = pluginAttr?.Name ?? Path.GetFileNameWithoutExtension(dllPath);
+                    string moduleVersion = pluginAttr?.Version ?? assemblyVersion ?? "-";
+
                     foreach (Type type in asm.GetTypes())
                     {
                         if (typeof(ICommand).IsAssignableFrom(type) && !type.IsInterface && !type.IsAbstract)
@@ -1298,23 +1394,9 @@ namespace Harvnyx
                                 commands[cmdName] = command;
                                 mainList.Add(cmdName);
 
-                                // 关键修改：只从 command.Version 获取，若无则直接设为 "-"
-                                string pluginVersion = null;
-                                var prop = type.GetProperty("Version", BindingFlags.Public | BindingFlags.Instance);
-                                if (prop != null && prop.CanRead)
-                                {
-                                    pluginVersion = prop.GetValue(command) as string;
-                                }
-                                // 如果反射失败，回退到接口属性（可能返回默认实现）
+                                string pluginVersion = command.Version;
                                 if (string.IsNullOrEmpty(pluginVersion))
-                                {
-                                    pluginVersion = command.Version;
-                                }
-                                // 如果仍为空，则显示 "-"
-                                if (string.IsNullOrEmpty(pluginVersion))
-                                {
-                                    pluginVersion = "-";
-                                }
+                                    pluginVersion = moduleVersion;
 
                                 cmdDetails.Add((cmdName, dllPath, fileSize, pluginVersion));
 
@@ -1325,10 +1407,13 @@ namespace Harvnyx
                                 var opts = command.GetOptionValues();
                                 if (opts != null && opts.Count > 0)
                                     optDict[cmdName] = new Dictionary<string, List<string>>(opts);
+
+                                var subCmdOptions = command.GetSubCommandOptions();
+                                if (subCmdOptions != null && subCmdOptions.Count > 0)
+                                    subCmdOpts[cmdName] = subCmdOptions;
                             }
                         }
                     }
-
                 }
                 catch (Exception ex)
                 {
@@ -1336,7 +1421,7 @@ namespace Harvnyx
                 }
             }
 
-            return (commands, mainList, subDict, optDict, cmdDetails);
+            return (commands, mainList, subDict, optDict, subCmdOpts, cmdDetails);
         }
 
         public static void StartWatching(string directory)
@@ -1371,18 +1456,16 @@ namespace Harvnyx
             {
                 try
                 {
-                    var (cmdDict, mainList, subDict, optDict, cmdDetails) = ScanCommands(directory);
+                    var (cmdDict, mainList, subDict, optDict, subCmdOpts, cmdDetails) = ScanCommands(directory);
                     var newCommands = new HashSet<string>(cmdDict.Keys, StringComparer.OrdinalIgnoreCase);
 
                     var added = newCommands.Except(_previousCommands).ToList();
                     var removed = _previousCommands.Except(newCommands).ToList();
 
-                    // 更新
                     UpdateCommandDictionary(cmdDict, cmdDetails);
-                    CommandCompleter.UpdateFromPlugins(mainList, subDict, optDict);
+                    CommandCompleter.UpdateFromPlugins(mainList, subDict, optDict, subCmdOpts);  // 传入 subCmdOpts
                     _previousCommands = newCommands;
 
-                    // 输出新增命令的详细信息
                     if (added.Count > 0)
                     {
                         var addedDetails = cmdDetails.Where(d => added.Contains(d.cmdName, StringComparer.OrdinalIgnoreCase)).ToList();
@@ -1475,6 +1558,7 @@ namespace Harvnyx
             public const string FILE_CREATE_FAILED = "EX0801";
             public const string FILE_WRITE_FAILED = "EX0803";
             public const string FILE_FORMAT_ERROR = "EX0900";
+            public const string FILE_DELETE_FAILED = "EX0802";
 
             // 日志特定错误 (EX0901-EX1000)
             public const string LOG_FORMAT_ERROR = "EX0901";
@@ -1528,9 +1612,11 @@ namespace Harvnyx
         }
 
         // 信息方法：青色
+        // this is god damn Debug Information!
+        // 这他妈的是调试信息！
         public static void info(string step, string message)
         {
-            string bracket = string.IsNullOrEmpty(step) ? "Tips" : $"Tips:{step}";
+            string bracket = string.IsNullOrEmpty(step) ? "Ready" : $"Tips:{step}";
             PrintColored(bracket, message, ConsoleColor.Cyan);
         }
     }

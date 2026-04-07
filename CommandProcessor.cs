@@ -56,6 +56,8 @@ namespace Harvnyx
                     return await CommandExecute.HandleShellCommand(args);
                 case "tasks":
                     return await CommandExecute.HandleTasksCommand(args, token);
+                case "ept":
+                    return await CommandExecute.HandleEptCommand(args, token);
                 default:
                     var plugin = CommandManager.GetPlugin(command);
                     string externalPath = FindExternalExecutable(command);
@@ -294,11 +296,13 @@ namespace Harvnyx
         private static readonly List<string> _builtInMainCommands;
         private static readonly Dictionary<string, List<string>> _builtInSubCommands;
         private static readonly Dictionary<string, Dictionary<string, List<string>>> _builtInOptionValues;
+        private static readonly Dictionary<string, Dictionary<string, List<string>>> _builtInSubCommandOptions;
 
         // 公开的可变数据（volatile 保证可见性）
         public static volatile List<string> MainCommands;
         public static volatile Dictionary<string, List<string>> SubCommands;
         public static volatile Dictionary<string, Dictionary<string, List<string>>> OptionValues;
+        public static volatile Dictionary<string, Dictionary<string, List<string>>> SubCommandOptions;
 
         public static readonly HashSet<string> ValueKeywords = new HashSet<string>(StringComparer.Ordinal) { };
 
@@ -321,13 +325,15 @@ namespace Harvnyx
             {
                 "sudo",
                 "shell",
-                "tasks"
+                "tasks",
+                "ept"
             };
             _builtInSubCommands = new Dictionary<string, List<string>>
             {
                 { "sudo", new List<string> { "-l", "-u", "-v", "-k", "-b", "-p", "-h", "--" } },
                 { "shell", new List<string> { "-a", "--additi", "-c", "--clear", "-r", "--reset", "-i", "--CommandInquiry", "-h", "--help" } },
-                { "tasks", new List<string> { "-l", "--list", "-k", "--kill", "-d", "--detailed", "-h", "--help" } }
+                { "tasks", new List<string> { "-l", "--list", "-k", "--kill", "-d", "--detailed", "-h", "--help" } },
+                { "ept", new List<string> { "update", "upgrade", "full-upgrade", "install", "remove", "purge", "search", "show", "list", "autoremove", "help" } }
             };
             _builtInOptionValues = new Dictionary<string, Dictionary<string, List<string>>>
             {
@@ -342,11 +348,20 @@ namespace Harvnyx
                     }
                 }
             };
+            _builtInSubCommandOptions = new Dictionary<string, Dictionary<string, List<string>>>
+            {
+                ["ept"] = new Dictionary<string, List<string>>
+                {
+                    ["install"] = new List<string> { "--only-upgrade", "--no-upgrade" },
+                    ["list"] = new List<string> { "--installed", "--upgradable" }
+                }
+            };
 
             // 公开字段初始为内置数据的副本
             MainCommands = new List<string>(_builtInMainCommands);
             SubCommands = CopySubCommands(_builtInSubCommands);
             OptionValues = CopyOptionValues(_builtInOptionValues);
+            SubCommandOptions = CopySubCommandOptions(_builtInSubCommandOptions);
 
             Task.Run(async () =>
             {
@@ -430,6 +445,20 @@ namespace Harvnyx
             return _effectiveMainCommands;
         }
 
+        private static Dictionary<string, Dictionary<string, List<string>>> CopySubCommandOptions(
+            Dictionary<string, Dictionary<string, List<string>>> source)
+        {
+            var copy = new Dictionary<string, Dictionary<string, List<string>>>(source.Count, StringComparer.Ordinal);
+            foreach (var cmd in source)
+            {
+                var innerCopy = new Dictionary<string, List<string>>(cmd.Value.Count, StringComparer.Ordinal);
+                foreach (var sub in cmd.Value)
+                    innerCopy[sub.Key] = new List<string>(sub.Value);
+                copy[cmd.Key] = innerCopy;
+            }
+            return copy;
+        }
+
         private static Dictionary<string, List<string>> CopySubCommands(Dictionary<string, List<string>> source)
         {
             var copy = new Dictionary<string, List<string>>(source.Count, StringComparer.Ordinal);
@@ -454,7 +483,8 @@ namespace Harvnyx
         public static void UpdateFromPlugins(
             List<string> pluginMainCommands,
             Dictionary<string, List<string>> pluginSubCommands,
-            Dictionary<string, Dictionary<string, List<string>>> pluginOptionValues)
+            Dictionary<string, Dictionary<string, List<string>>> pluginOptionValues,
+            Dictionary<string, Dictionary<string, List<string>>> pluginSubCommandOptions)
         {
             // 合并主命令
             var newMain = new List<string>(_builtInMainCommands);
@@ -490,12 +520,41 @@ namespace Harvnyx
                 }
             }
 
+            // 合并 SubCommandOptions
+            var newSubCmdOpt = CopySubCommandOptions(_builtInSubCommandOptions);
+            foreach (var cmd in pluginSubCommandOptions)
+            {
+                if (newSubCmdOpt.TryGetValue(cmd.Key, out var existingSubOpt))
+                {
+                    foreach (var sub in cmd.Value)
+                    {
+                        if (existingSubOpt.TryGetValue(sub.Key, out var existingValues))
+                            existingValues.AddRange(sub.Value.Except(existingValues));
+                        else
+                            existingSubOpt[sub.Key] = new List<string>(sub.Value);
+                    }
+                }
+                else
+                {
+                    newSubCmdOpt[cmd.Key] = new Dictionary<string, List<string>>(cmd.Value);
+                }
+            }
+
             // 原子性替换
             MainCommands = newMain;
             InternalCommands = new HashSet<string>(newMain, StringComparer.Ordinal);
             SubCommands = newSub;
             OptionValues = newOpt;
+            SubCommandOptions = newSubCmdOpt; // 新增
             _effectiveMainCommands = null;
+        }
+
+        public static List<string> GetSubCommandOptions(string mainCommand, string subCommand)
+        {
+            if (SubCommandOptions.TryGetValue(mainCommand, out var subDict) &&
+                subDict.TryGetValue(subCommand, out var options))
+                return options;
+            return null;
         }
     }
 
@@ -905,6 +964,108 @@ namespace Harvnyx
         }
 
         /* ========================================================== */
+        /* =========================== ept ========================== */
+        /* ========================================================== */
+        internal static async Task<bool> HandleEptCommand(List<string> args, CancellationToken token)
+        {
+            if (args.Count == 0)
+            {
+                ShowEptHelp();
+                return true;
+            }
+
+            string subCommand = args[0].ToLowerInvariant();
+            var subArgs = args.Skip(1).ToList();
+
+            // 检查是否需要管理员权限（除 list/search/show 外都需要）
+            bool needAdmin = !(subCommand == "list" || subCommand == "search" || subCommand == "show");
+            if (needAdmin && !IsAdministrator())
+            {
+                print.error("ept", "此操作需要管理员权限，请使用 sudo ept ...", print.ErrorCodes.PERMISSION_DENIED);
+                return false;
+            }
+
+            switch (subCommand)
+            {
+                case "update":
+                    return await EptManager.UpdateDatabase(token);
+                case "upgrade":
+                    return await EptManager.UpgradePackages(false, token);
+                case "full-upgrade":
+                    return await EptManager.UpgradePackages(true, token);
+                case "install":
+                    return await EptManager.InstallPackages(subArgs, token);
+                case "remove":
+                    if (subArgs.Count == 0)
+                    {
+                        print.error("ept", "缺少包名，用法: ept remove <package>", print.ErrorCodes.MISSING_PARAMETER);
+                        return false;
+                    }
+                    return await EptManager.RemovePackages(subArgs, false, token);
+                case "purge":
+                    if (subArgs.Count == 0)
+                    {
+                        print.error("ept", "缺少包名，用法: ept purge <package>", print.ErrorCodes.MISSING_PARAMETER);
+                        return false;
+                    }
+                    return await EptManager.RemovePackages(subArgs, true, token);
+                case "search":
+                    if (subArgs.Count == 0)
+                    {
+                        print.error("ept", "缺少搜索关键词", print.ErrorCodes.MISSING_PARAMETER);
+                        return false;
+                    }
+                    return await EptManager.SearchPackages(string.Join(" ", subArgs), token);
+                case "show":
+                    if (subArgs.Count == 0)
+                    {
+                        print.error("ept", "缺少包名", print.ErrorCodes.MISSING_PARAMETER);
+                        return false;
+                    }
+                    return await EptManager.ShowPackage(subArgs[0], token);
+                case "list":
+                    return await EptManager.ListPackages(subArgs, token);
+                case "autoremove":
+                    return await EptManager.AutoRemove(token);
+                case "help":
+                    return await ShowEptHelp();
+                default:
+                    print.error("ept", $"未知子命令: {subCommand}", print.ErrorCodes.INVALID_COMMAND);
+                    return false;
+            }
+        }
+
+        private static async Task<bool> ShowEptHelp()
+        {
+            Console.WriteLine("用法: ept <子命令> [选项]");
+            Console.WriteLine("包管理工具，用于安装、升级、删除扩展命令/插件。");
+            Console.WriteLine();
+            Console.WriteLine("子命令:");
+            Console.WriteLine("  update                更新包数据库");
+            Console.WriteLine("  upgrade               升级所有已安装的软件包");
+            Console.WriteLine("  full-upgrade          完整升级（升级前删除需要更新的包）");
+            Console.WriteLine("  install <包名>...     安装指定的软件包");
+            Console.WriteLine("         [=版本]         安装指定版本");
+            Console.WriteLine("         --only-upgrade  仅升级已安装的包，不安装新包");
+            Console.WriteLine("         --no-upgrade    安装但不升级已存在的包");
+            Console.WriteLine("  remove <包名>...      删除软件包");
+            Console.WriteLine("  purge <包名>...       移除软件包及配置文件");
+            Console.WriteLine("  search <关键词>       查找软件包");
+            Console.WriteLine("  show <包名>           显示软件包详细信息");
+            Console.WriteLine("  list --installed      列出所有已安装的包");
+            Console.WriteLine("  list --upgradable     列出可更新的软件包");
+            Console.WriteLine("  autoremove            清理不再使用的依赖和库文件");
+            return true;
+        }
+
+        private static bool IsAdministrator()
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var principal = new WindowsPrincipal(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+
+        /* ========================================================== */
         /* ========================== shell ========================= */
         /* ========================================================== */
         internal static async Task<bool> HandleShellCommand(List<string> args)
@@ -1186,6 +1347,7 @@ namespace Harvnyx
         string Version => null;
         List<string> GetSubCommands();
         Dictionary<string, List<string>> GetOptionValues();
+        Dictionary<string, List<string>> GetSubCommandOptions() => null;
         Task<bool> ExecuteAsync(List<string> args, CancellationToken token = default);
     }
 }

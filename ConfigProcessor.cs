@@ -20,6 +20,9 @@ namespace Harvnyx
         private static string _cachedRAM = "0MB / 0GB 0%";
         private static readonly object _lock = new object();
 
+        // 是否允许未标记插件（即没有 PluginModuleAttribute 的插件）被加载，默认为 false
+        public static bool AllowUnmarkedPlugins { get; set; } = false;
+
         /* 配置项 */
         public enum Mode
         {
@@ -78,6 +81,10 @@ namespace Harvnyx
                             if (Enum.TryParse<Mode>(value, true, out var mode))
                                 additional = mode;
                             break;
+                        case "allowunmarkedplugins":
+                            if (bool.TryParse(value, out var allow))
+                                AllowUnmarkedPlugins = allow;
+                            break;
                         case "commandinquiry":
                             if (Enum.TryParse<CommandInquiryMode>(value, true, out var inquiry))
                                 CommandInquiry = inquiry;
@@ -110,10 +117,11 @@ namespace Harvnyx
                 var lines = new List<string>
                 {
                     "; Harvnyx 配置文件",
-                    $"; 最后修改时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}",
+                    $"; 最后修改时间: {DateTime.Now:yyyy-MM-dd HH:mm}",
                     "",
                     $"[Settings]",
                     $"additional={additional}",
+                    $"AllowUnmarkedPlugins={AllowUnmarkedPlugins}",
                     $"CommandInquiry={CommandInquiry}",
                     $"ShellClear={ShellClear}"
                 };
