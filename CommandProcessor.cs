@@ -198,32 +198,18 @@ namespace Harvnyx
 
                 if (c == '\\' && inQuotes)
                 {
-                    // 转义符，仅在引号内生效（例如 \"）
                     escapeNext = true;
                     continue;
                 }
 
                 if (c == '"')
                 {
-                    if (inQuotes)
-                    {
-                        // 结束引号，但需要检查下一个字符是否为非空白（如紧接其他参数）
-                        // 简单起见，这里直接结束引号，后面的空格作为分隔
-                        inQuotes = false;
-                        // 不添加字符
-                    }
-                    else
-                    {
-                        // 开始引号
-                        inQuotes = true;
-                        // 不添加字符
-                    }
+                    inQuotes = !inQuotes;
                     continue;
                 }
 
                 if (!inQuotes && char.IsWhiteSpace(c))
                 {
-                    // 遇到空白且不在引号内，完成当前参数
                     if (current.Length > 0)
                     {
                         args.Add(current.ToString());
@@ -238,7 +224,24 @@ namespace Harvnyx
             if (current.Length > 0)
                 args.Add(current.ToString());
 
-            return args;
+            // 展开短选项组合：将 -abc 变成 -a -b -c
+            var expanded = new List<string>();
+            foreach (var arg in args)
+            {
+                if (arg.StartsWith("-") && !arg.StartsWith("--") && arg.Length > 2)
+                {
+                    // 例如 -abc
+                    foreach (char ch in arg.Substring(1))
+                    {
+                        expanded.Add($"-{ch}");
+                    }
+                }
+                else
+                {
+                    expanded.Add(arg);
+                }
+            }
+            return expanded;
         }
 
         /// <summary>执行外部命令（非 sudo），在当前控制台运行，不创建新窗口</summary>
@@ -977,11 +980,18 @@ namespace Harvnyx
             string subCommand = args[0].ToLowerInvariant();
             var subArgs = args.Skip(1).ToList();
 
+            var nonOptionArgs = args.Where(a => !a.StartsWith("-")).ToList();
+            if (nonOptionArgs.Count > 1)
+            {
+                print.error(null, $"只能指定一个子命令，多余的子命令: {string.Join(", ", nonOptionArgs.Skip(1))}", print.ErrorCodes.INVALID_PARAMETER);
+                return false;
+            }
+
             // 检查是否需要管理员权限（除 list/search/show 外都需要）
             bool needAdmin = !(subCommand == "list" || subCommand == "search" || subCommand == "show");
             if (needAdmin && !IsAdministrator())
             {
-                print.error("ept", "此操作需要管理员权限，请使用 sudo ept ...", print.ErrorCodes.PERMISSION_DENIED);
+                print.error(null, "此操作需要管理员权限，请使用 sudo ept ...", print.ErrorCodes.PERMISSION_DENIED);
                 return false;
             }
 

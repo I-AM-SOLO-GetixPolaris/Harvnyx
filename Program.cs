@@ -597,6 +597,7 @@ namespace Harvnyx
                             return matches[0].Substring(lastWord.Length);
                     }
                 }
+                return null;
             }
             // ---- 子命令参数建议结束 ----
 
@@ -791,7 +792,7 @@ namespace Harvnyx
             return result;
         }
 
-        
+
 
         /*
          * 补全逻辑
@@ -813,7 +814,7 @@ namespace Harvnyx
             if (!CommandCompleter.InternalCommands.Contains(mainCmd))
                 return (null, false);
 
-            // 尝试找到当前输入的子命令（主命令后的第一个单词）
+            // 尝试找到当前输入的子命令（主命令后的第一个非选项单词）
             string subCmd = null;
             int mainIndex = nonEmptyParts.IndexOf(mainCmd);
             if (mainIndex >= 0 && mainIndex + 1 < nonEmptyParts.Count)
@@ -827,50 +828,51 @@ namespace Harvnyx
             string lastWord = nonEmptyParts.Last();
             string prevWord = nonEmptyParts.Count >= 2 ? nonEmptyParts[nonEmptyParts.Count - 2] : null;
 
-            // ---- 新增：处理子命令级别的子参数 ----
+            // ========== 关键修改：如果已经指定了子命令，则只补全该子命令的选项/参数 ==========
             if (subCmd != null)
             {
+                // 获取子命令级别的选项（如 ept install 的 --only-upgrade）
                 var subParams = CommandCompleter.GetSubCommandOptions(mainCmd, subCmd);
                 if (subParams != null && subParams.Count > 0)
                 {
-                    // 情况：尾随空格，准备输入下一个单词（应该是子参数）
                     if (endsWithSpace)
                     {
-                        // 如果上一个单词（即刚输入的）已经是一个子参数，则循环下一个
+                        // 有尾随空格：准备输入下一个子参数（选项或值）
+                        // 如果上一个单词是已经存在的子参数，则循环下一个
                         if (prevWord != null && subParams.Contains(prevWord))
                         {
                             int idx = subParams.IndexOf(prevWord);
                             int nextIdx = (idx + 1) % subParams.Count;
                             return (subParams[nextIdx], false);
                         }
-                        // 否则，补全第一个子参数
+                        // 否则，返回第一个子参数
                         return (subParams[0], false);
                     }
                     else
                     {
-                        // 当前正在输入子参数的部分
+                        // 无尾随空格：正在输入当前单词，进行前缀匹配
                         var matches = subParams.Where(p => p.StartsWith(lastWord, StringComparison.OrdinalIgnoreCase)).ToList();
                         if (matches.Count > 0)
                         {
                             if (matches.Contains(lastWord))
                             {
-                                // 已完整，循环到下一个
+                                // 已完整输入，循环到下一个
                                 int idx = subParams.IndexOf(lastWord);
                                 int nextIdx = (idx + 1) % subParams.Count;
                                 return (subParams[nextIdx], false);
                             }
                             else
                             {
-                                // 部分匹配，补全第一个
                                 return (matches[0], false);
                             }
                         }
                     }
                 }
+                // 如果没有子参数，则不再补全任何内容（避免回退到子命令列表）
+                return (null, false);
             }
-            // ---- 子参数处理结束 ----
 
-            // 原有逻辑：处理主命令的直接子命令/选项
+            // ========== 原有逻辑：未指定子命令时，补全子命令列表或选项值 ==========
             // 情况1：有尾随空格，准备输入下一个单词
             if (endsWithSpace)
             {

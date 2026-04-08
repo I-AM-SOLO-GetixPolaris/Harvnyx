@@ -6,7 +6,6 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,7 +13,6 @@ namespace Harvnyx
 {
     public static class EptManager
     {
-        // 配置路径
         private static readonly string BaseDir = AppDomain.CurrentDomain.BaseDirectory;
         private static readonly string DatabaseDir = Path.Combine(BaseDir, "ept");
         private static readonly string PackagesFile = Path.Combine(DatabaseDir, "packages.json");
@@ -22,18 +20,16 @@ namespace Harvnyx
         private static readonly string DownloadDir = Path.Combine(DatabaseDir, "downloads");
         private static readonly string ExpandDir = Path.Combine(BaseDir, "expand");
 
-        // 包源配置
         private const string PackageIndexUrl = "https://raw.githubusercontent.com/I-AM-SOLO-GetixPolaris/Harvnyx/master/expand/packages.json";
         private const string PackageDownloadBase = "https://raw.githubusercontent.com/I-AM-SOLO-GetixPolaris/Harvnyx/master/expand/";
         private static readonly HttpClient _httpClient = new HttpClient();
 
-        // 颜色定义
-        private const string ColorCyan = "\u001b[38;2;125;151;255m";
-        private const string ColorGray = "\u001b[38;2;128;128;128m";
-        private const string ColorBold = "\u001b[1m";
-        private const string ColorReset = "\u001b[0m";
+        // 颜色定义：仅加粗、灰色（版本号）、::专用色
+        private const string BOLD = "\u001b[1m";
+        private const string GRAY = "\u001b[38;2;128;128;128m";
+        private const string PROMPT_COLOR = "\u001b[38;2;125;151;255m"; // #7d97ff
+        private const string RESET = "\u001b[0m";
 
-        // 包信息模型
         public class PackageInfo
         {
             public string Name { get; set; }
@@ -55,18 +51,14 @@ namespace Harvnyx
 
         static EptManager()
         {
-            if (!Directory.Exists(DatabaseDir))
-                Directory.CreateDirectory(DatabaseDir);
-            if (!Directory.Exists(DownloadDir))
-                Directory.CreateDirectory(DownloadDir);
-            if (!Directory.Exists(ExpandDir))
-                Directory.CreateDirectory(ExpandDir);
+            if (!Directory.Exists(DatabaseDir)) Directory.CreateDirectory(DatabaseDir);
+            if (!Directory.Exists(DownloadDir)) Directory.CreateDirectory(DownloadDir);
+            if (!Directory.Exists(ExpandDir)) Directory.CreateDirectory(ExpandDir);
         }
 
         private static async Task<Dictionary<string, PackageInfo>> LoadPackageDatabase()
         {
-            if (!File.Exists(PackagesFile))
-                return new Dictionary<string, PackageInfo>();
+            if (!File.Exists(PackagesFile)) return new Dictionary<string, PackageInfo>();
             var json = await File.ReadAllTextAsync(PackagesFile);
             return JsonSerializer.Deserialize<Dictionary<string, PackageInfo>>(json) ?? new Dictionary<string, PackageInfo>();
         }
@@ -79,8 +71,7 @@ namespace Harvnyx
 
         private static async Task<Dictionary<string, InstalledPackage>> LoadInstalled()
         {
-            if (!File.Exists(InstalledFile))
-                return new Dictionary<string, InstalledPackage>();
+            if (!File.Exists(InstalledFile)) return new Dictionary<string, InstalledPackage>();
             var json = await File.ReadAllTextAsync(InstalledFile);
             return JsonSerializer.Deserialize<Dictionary<string, InstalledPackage>>(json) ?? new Dictionary<string, InstalledPackage>();
         }
@@ -95,7 +86,6 @@ namespace Harvnyx
 
         public static async Task<bool> UpdateDatabase(CancellationToken token)
         {
-            // 调试信息已移除，静默更新
             try
             {
                 var response = await _httpClient.GetAsync(PackageIndexUrl, token);
@@ -104,7 +94,6 @@ namespace Harvnyx
                     print.error("ept", $"无法获取包索引，HTTP {response.StatusCode}", print.ErrorCodes.NETWORK_ERROR);
                     return false;
                 }
-
                 var json = await response.Content.ReadAsStringAsync(token);
                 var db = JsonSerializer.Deserialize<Dictionary<string, PackageInfo>>(json);
                 if (db == null)
@@ -112,7 +101,6 @@ namespace Harvnyx
                     print.error("ept", "包索引格式无效", print.ErrorCodes.FILE_FORMAT_ERROR);
                     return false;
                 }
-
                 await SavePackageDatabase(db);
                 print.success("ept", "包数据库更新成功");
                 return true;
@@ -140,51 +128,46 @@ namespace Harvnyx
                 return true;
             }
 
-            Console.WriteLine($"{ColorBold}Packages ({upgradable.Count}){ColorReset}");
-            foreach (var (name, old, newPkg) in upgradable)
+            Console.WriteLine("正在准备包...");
+            Console.WriteLine("正在整理依赖关系...");
+            print.success(null, "检测到包依赖周期");
+            Console.WriteLine();
+
+            // 包列表
+            Console.Write($"{BOLD}Packages ({upgradable.Count}){RESET} ");
+            var first = upgradable.First();
+            PrintPackageName(first.name, first.latest.Version, true);
+            Console.WriteLine();
+            foreach (var (name, _, pkg) in upgradable.Skip(1))
             {
-                string versionDisplay = $"{name}-{newPkg.Version}";
-                int dashIndex = versionDisplay.IndexOf('-');
-                if (dashIndex >= 0)
-                {
-                    Console.Write(versionDisplay.Substring(0, dashIndex + 1));
-                    Console.Write($"{ColorGray}{versionDisplay.Substring(dashIndex + 1)}{ColorReset}");
-                }
-                else
-                    Console.Write(versionDisplay);
+                Console.Write("             ");
+                PrintPackageName(name, pkg.Version, false);
                 Console.WriteLine();
             }
+            Console.WriteLine();
 
             long totalDownload = upgradable.Sum(u => u.latest.Size);
             long totalInstall = upgradable.Sum(u => u.latest.InstalledSize);
-            Console.WriteLine($"{ColorBold}总下载大小:{ColorReset} {FormatSize(totalDownload)}");
-            Console.WriteLine($"{ColorBold}总安装大小:{ColorReset} {FormatSize(totalInstall)}");
+            PrintSizeSummary(totalDownload, totalInstall);
 
-            if (!await ConfirmAction())
-                return false;
+            if (!await ConfirmAction()) return false;
 
-            if (fullUpgrade)
+            PrintColoredPrompt(":: Retrieving packages...");
+            foreach (var (name, _, pkg) in upgradable)
             {
-                foreach (var (name, old, _) in upgradable)
-                {
-                    if (!await UninstallPackage(name, false, token))
-                    {
-                        print.error("ept", $"卸载 {name} 失败，中止升级", print.ErrorCodes.EXTERNAL_PROGRAM_FAILED);
-                        return false;
-                    }
-                }
+                if (!await DownloadAndInstall(pkg, token)) return false;
             }
-
-            foreach (var (name, _, newPkg) in upgradable)
-            {
-                if (!await DownloadAndInstall(newPkg, token))
-                    return false;
-            }
+            print.success(null, "Done");
             return true;
         }
 
         public static async Task<bool> InstallPackages(List<string> args, CancellationToken token)
         {
+            Console.WriteLine("正在准备包...");
+            Console.WriteLine("正在整理依赖关系...");
+            print.success(null, "检测到包依赖周期");
+            Console.WriteLine();
+
             bool onlyUpgrade = args.Contains("--only-upgrade");
             bool noUpgrade = args.Contains("--no-upgrade");
             var packageSpecs = args.Where(a => !a.StartsWith("--")).ToList();
@@ -197,7 +180,8 @@ namespace Harvnyx
             var db = await LoadPackageDatabase();
             var installed = await LoadInstalled();
             var toInstall = new List<PackageInfo>();
-            var toUpgrade = new List<(InstalledPackage old, PackageInfo newPkg)>();
+            var toReinstall = new List<PackageInfo>();   // 已安装且版本相同
+            var toUpgrade = new List<PackageInfo>();     // 已安装但版本不同
 
             foreach (var spec in packageSpecs)
             {
@@ -223,11 +207,12 @@ namespace Harvnyx
 
                 if (installed.TryGetValue(name, out var inst))
                 {
-                    if (noUpgrade)
-                        continue;
-                    if (onlyUpgrade && inst.Version == pkg.Version)
-                        continue;
-                    toUpgrade.Add((inst, pkg));
+                    if (noUpgrade) continue;
+                    if (onlyUpgrade && inst.Version == pkg.Version) continue;
+                    if (inst.Version == pkg.Version)
+                        toReinstall.Add(pkg);
+                    else
+                        toUpgrade.Add(pkg);
                 }
                 else
                 {
@@ -240,10 +225,20 @@ namespace Harvnyx
                 }
             }
 
-            var allToInstall = new List<PackageInfo>(toInstall);
-            foreach (var (_, pkg) in toUpgrade)
-                allToInstall.Add(pkg);
+            // 所有要操作的包
+            var allToInstall = new List<PackageInfo>();
+            allToInstall.AddRange(toInstall);
+            allToInstall.AddRange(toUpgrade);
+            allToInstall.AddRange(toReinstall);
 
+            int totalCount = toInstall.Count + toUpgrade.Count + toReinstall.Count;
+            if (totalCount == 0)
+            {
+                Console.WriteLine("没有需要安装的包");
+                return true;
+            }
+
+            // 依赖检查（简单警告）
             var missingDeps = new List<string>();
             foreach (var pkg in allToInstall)
             {
@@ -260,46 +255,73 @@ namespace Harvnyx
                     return false;
             }
 
-            int totalCount = toInstall.Count + toUpgrade.Count;
-            if (totalCount == 0)
+            // 情况1：只有重装（没有新安装和升级）
+            bool onlyReinstall = (toInstall.Count == 0 && toUpgrade.Count == 0 && toReinstall.Count > 0);
+            if (onlyReinstall)
             {
-                Console.WriteLine("没有需要安装的包");
+                // 逐个询问重装
+                foreach (var pkg in toReinstall)
+                {
+                    print.success(null, $"包'{pkg.Name}-{pkg.Version}'已经安装。");
+                    if (!await ConfirmAction(":: Proceed with reinstall? [Y/n] ", true))
+                        return false;
+                }
+                // 直接开始重装，不显示包列表和总大小
+                PrintColoredPrompt(":: Retrieving packages...");
+                foreach (var pkg in toReinstall)
+                {
+                    if (!await DownloadAndInstall(pkg, token))
+                        return false;
+                }
+                print.success(null, "Done");
                 return true;
             }
-            Console.WriteLine($"{ColorBold}Packages ({totalCount}){ColorReset}");
-            foreach (var pkg in toInstall)
-                PrintPackageLine(pkg);
-            foreach (var (_, pkg) in toUpgrade)
-                PrintPackageLine(pkg);
 
-            long totalDownload = toInstall.Sum(p => p.Size) + toUpgrade.Sum(u => u.newPkg.Size);
-            long totalInstallSize = toInstall.Sum(p => p.InstalledSize) + toUpgrade.Sum(u => u.newPkg.InstalledSize);
-            Console.WriteLine($"{ColorBold}总下载大小:{ColorReset} {FormatSize(totalDownload)}");
-            Console.WriteLine($"{ColorBold}总安装大小:{ColorReset} {FormatSize(totalInstallSize)}");
-
-            if (!await ConfirmAction())
-                return false;
-
-            foreach (var pkg in toInstall)
+            // 情况2：有安装或升级操作（可能包含重装）
+            // 显示包列表和总大小，一次性确认（不再单独询问每个重装包）
+            Console.Write($"{BOLD}Packages ({totalCount}){RESET} ");
+            if (allToInstall.Count > 0)
             {
-                if (!await DownloadAndInstall(pkg, token))
-                    return false;
-            }
-            foreach (var (old, pkg) in toUpgrade)
-            {
-                if (!await UninstallPackage(pkg.Name, false, token))
+                var first = allToInstall[0];
+                PrintPackageName(first.Name, first.Version, true);
+                Console.WriteLine();
+                foreach (var pkg in allToInstall.Skip(1))
                 {
-                    print.error("ept", $"卸载旧版 {pkg.Name} 失败", print.ErrorCodes.EXTERNAL_PROGRAM_FAILED);
-                    return false;
+                    Console.Write("             ");
+                    PrintPackageName(pkg.Name, pkg.Version, false);
+                    Console.WriteLine();
                 }
-                if (!await DownloadAndInstall(pkg, token))
-                    return false;
             }
+            Console.WriteLine();
+
+            long totalDownload = allToInstall.Sum(p => p.Size);
+            long totalInstallSize = allToInstall.Sum(p => p.InstalledSize);
+            PrintSizeSummary(totalDownload, totalInstallSize);
+
+            if (!await ConfirmAction()) return false;
+
+            PrintColoredPrompt(":: Retrieving packages...");
+            foreach (var pkg in toInstall)
+                if (!await DownloadAndInstall(pkg, token)) return false;
+            foreach (var pkg in toUpgrade)
+            {
+                if (!await UninstallPackage(pkg.Name, false, token)) return false;
+                if (!await DownloadAndInstall(pkg, token)) return false;
+            }
+            foreach (var pkg in toReinstall)
+            {
+                if (!await UninstallPackage(pkg.Name, false, token)) return false;
+                if (!await DownloadAndInstall(pkg, token)) return false;
+            }
+
+            print.success(null, "Done");
             return true;
         }
 
         public static async Task<bool> RemovePackages(List<string> packages, bool purge, CancellationToken token)
         {
+            Console.WriteLine("移除包...\n");
+
             var installed = await LoadInstalled();
             var toRemove = packages.Where(p => installed.ContainsKey(p)).ToList();
             if (toRemove.Count == 0)
@@ -308,18 +330,34 @@ namespace Harvnyx
                 return true;
             }
 
-            Console.WriteLine($"{ColorBold}将要删除的包 ({toRemove.Count}){ColorReset}");
-            foreach (var p in toRemove)
-                Console.WriteLine($"  {p}");
+            // 包列表
+            Console.Write($"{BOLD}Packages ({toRemove.Count}){RESET} ");
+            var first = toRemove[0];
+            var firstPkg = installed[first];
+            PrintPackageName(first, firstPkg.Version, true);
+            Console.WriteLine();
+            foreach (var p in toRemove.Skip(1))
+            {
+                var pkg = installed[p];
+                Console.Write("             ");
+                PrintPackageName(p, pkg.Version, false);
+                Console.WriteLine();
+            }
+            Console.WriteLine();
 
-            if (!await ConfirmAction($"是否继续删除{(purge ? "并清除配置" : "")}？[Y/n] "))
-                return false;
+            if (!await ConfirmAction(":: Proceed with uninstall? [Y/n] ", true)) return false;
 
+            PrintColoredPrompt(":: Retrieving packages...");
             foreach (var p in toRemove)
             {
-                if (!await UninstallPackage(p, purge, token))
+                var pkg = installed[p];
+                Console.Write($" {p}-{pkg.Version} 准备就绪");
+                if (await UninstallPackage(p, purge, token))
+                    Console.WriteLine();
+                else
                     return false;
             }
+            print.success(null, "Done");
             return true;
         }
 
@@ -327,19 +365,14 @@ namespace Harvnyx
         {
             var db = await LoadPackageDatabase();
             var results = db.Values.Where(p => p.Name.Contains(keyword, StringComparison.OrdinalIgnoreCase) ||
-                                               p.Description.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                                   .ToList();
+                                               p.Description.Contains(keyword, StringComparison.OrdinalIgnoreCase)).ToList();
             if (results.Count == 0)
             {
                 Console.WriteLine("未找到匹配的包");
                 return true;
             }
             foreach (var pkg in results)
-            {
-                Console.Write($"{pkg.Name} ");
-                Console.Write($"{ColorGray}{pkg.Version}{ColorReset}");
-                Console.WriteLine($"  {pkg.Description}");
-            }
+                Console.WriteLine($"{pkg.Name} {pkg.Version}  {pkg.Description}");
             return true;
         }
 
@@ -351,13 +384,13 @@ namespace Harvnyx
                 print.error("ept", $"包 {packageName} 不存在", print.ErrorCodes.INVALID_PARAMETER);
                 return false;
             }
-            Console.WriteLine($"{ColorBold}名称：{ColorReset}{pkg.Name}");
-            Console.WriteLine($"{ColorBold}版本：{ColorReset}{pkg.Version}");
-            Console.WriteLine($"{ColorBold}描述：{ColorReset}{pkg.Description}");
-            Console.WriteLine($"{ColorBold}下载大小：{ColorReset}{FormatSize(pkg.Size)}");
-            Console.WriteLine($"{ColorBold}安装大小：{ColorReset}{FormatSize(pkg.InstalledSize)}");
-            Console.WriteLine($"{ColorBold}依赖：{ColorReset}{(pkg.Dependencies.Count > 0 ? string.Join(", ", pkg.Dependencies) : "无")}");
-            Console.WriteLine($"{ColorBold}冲突：{ColorReset}{(pkg.Conflicts.Count > 0 ? string.Join(", ", pkg.Conflicts) : "无")}");
+            Console.WriteLine($"名称：{pkg.Name}");
+            Console.WriteLine($"版本：{pkg.Version}");
+            Console.WriteLine($"描述：{pkg.Description}");
+            Console.WriteLine($"下载大小：{FormatSize(pkg.Size)}");
+            Console.WriteLine($"安装大小：{FormatSize(pkg.InstalledSize)}");
+            Console.WriteLine($"依赖：{(pkg.Dependencies.Count > 0 ? string.Join(", ", pkg.Dependencies) : "无")}");
+            Console.WriteLine($"冲突：{(pkg.Conflicts.Count > 0 ? string.Join(", ", pkg.Conflicts) : "无")}");
             return true;
         }
 
@@ -366,13 +399,8 @@ namespace Harvnyx
             if (args.Contains("--installed"))
             {
                 var installed = await LoadInstalled();
-                if (installed.Count == 0)
-                    Console.WriteLine("没有已安装的包");
-                else
-                {
-                    foreach (var kv in installed)
-                        Console.WriteLine($"{kv.Key} {kv.Value.Version}");
-                }
+                if (installed.Count == 0) Console.WriteLine("没有已安装的包");
+                else foreach (var kv in installed) Console.WriteLine($"{kv.Key} {kv.Value.Version}");
                 return true;
             }
             else if (args.Contains("--upgradable"))
@@ -381,13 +409,8 @@ namespace Harvnyx
                 var db = await LoadPackageDatabase();
                 var upgradable = installed.Where(kv => db.TryGetValue(kv.Key, out var pkg) && pkg.Version != kv.Value.Version)
                                           .Select(kv => (kv.Key, kv.Value.Version, db[kv.Key].Version));
-                if (!upgradable.Any())
-                    Console.WriteLine("没有可更新的包");
-                else
-                {
-                    foreach (var (name, oldVer, newVer) in upgradable)
-                        Console.WriteLine($"{name} {oldVer} -> {newVer}");
-                }
+                if (!upgradable.Any()) Console.WriteLine("没有可更新的包");
+                else foreach (var (name, oldVer, newVer) in upgradable) Console.WriteLine($"{name} {oldVer} -> {newVer}");
                 return true;
             }
             else
@@ -403,67 +426,79 @@ namespace Harvnyx
             var db = await LoadPackageDatabase();
             var allDeps = new HashSet<string>();
             foreach (var name in installed.Keys)
-            {
                 if (db.TryGetValue(name, out var pkg))
-                {
-                    foreach (var dep in pkg.Dependencies)
-                        allDeps.Add(dep);
-                }
-            }
+                    foreach (var dep in pkg.Dependencies) allDeps.Add(dep);
             var orphans = installed.Keys.Where(p => !allDeps.Contains(p)).ToList();
             if (orphans.Count == 0)
             {
                 Console.WriteLine("没有孤立的包");
                 return true;
             }
-            Console.WriteLine($"{ColorBold}孤立包 ({orphans.Count}){ColorReset}");
-            foreach (var p in orphans)
-                Console.WriteLine($"  {p}");
-            if (!await ConfirmAction("是否删除这些孤立包？[Y/n] "))
-                return false;
-
-            foreach (var p in orphans)
-                await UninstallPackage(p, false, token);
+            Console.WriteLine($"孤立包 ({orphans.Count})");
+            foreach (var p in orphans) Console.WriteLine($"  {p}");
+            if (!await ConfirmAction("是否删除这些孤立包？[Y/n] ")) return false;
+            foreach (var p in orphans) await UninstallPackage(p, false, token);
             print.success("ept", "清理完成");
             return true;
         }
 
         // ========== 辅助方法 ==========
 
-        private static void PrintPackageLine(PackageInfo pkg)
+        private static void PrintPackageName(string name, string version, bool isFirst)
         {
-            string line = $"{pkg.Name}-{pkg.Version}";
-            int dash = line.IndexOf('-');
-            if (dash >= 0)
+            int dashIndex = name.IndexOf('-');
+            if (dashIndex >= 0)
             {
-                Console.Write(line.Substring(0, dash + 1));
-                Console.Write($"{ColorGray}{line.Substring(dash + 1)}{ColorReset}");
+                Console.Write(name.Substring(0, dashIndex + 1));
+                Console.Write($"{GRAY}{name.Substring(dashIndex + 1)}{RESET}");
             }
             else
-                Console.Write(line);
+            {
+                Console.Write(name);
+            }
+            Console.Write($"-{version}");
+        }
+
+        private static void PrintSizeSummary(long totalDownload, long totalInstall)
+        {
+            string downloadStr = FormatSize(totalDownload);
+            string installStr = FormatSize(totalInstall);
+            Console.Write($"{BOLD}总下载大小:{RESET} ");
+            Console.WriteLine($"{downloadStr,15}");
+            Console.Write($"{BOLD}总安装大小:{RESET} ");
+            Console.WriteLine($"{installStr,15}");
             Console.WriteLine();
         }
 
         private static string FormatSize(long bytes)
         {
-            if (bytes < 1024)
-                return $"{bytes} B";
-            if (bytes < 1024 * 1024)
-                return $"{bytes / 1024.0:F2} KiB";
-            if (bytes < 1024 * 1024 * 1024)
-                return $"{bytes / (1024.0 * 1024):F2} MiB";
+            if (bytes < 1024) return $"{bytes} B";
+            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F2} KiB";
+            if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024):F2} MiB";
             return $"{bytes / (1024.0 * 1024 * 1024):F2} GiB";
         }
 
-        private static async Task<bool> ConfirmAction(string prompt = ":: 是否继续安装? [Y/n] ", bool defaultYes = true)
+        // 确认提示：使用 ReadLine()
+        private static async Task<bool> ConfirmAction(string prompt = ":: Proceed with installation? [Y/n] ", bool defaultYes = true)
         {
-            Console.Write($"{ColorCyan}{prompt}{ColorReset}");
-            var key = Console.ReadKey(true);
-            Console.WriteLine();
-            if (defaultYes)
-                return key.Key != ConsoleKey.N;
+            PrintColoredPrompt(prompt);
+            string input = (await Task.Run(() => Console.ReadLine()))?.Trim().ToLower() ?? "";
+            if (string.IsNullOrEmpty(input)) return defaultYes;
+            return input == "y" || input == "yes";
+        }
+
+        // 输出带颜色 :: 的提示行（仅两个冒号着色）
+        private static void PrintColoredPrompt(string message)
+        {
+            if (message.StartsWith("::"))
+            {
+                Console.Write($"{PROMPT_COLOR}::{RESET}");
+                Console.Write(message.Substring(2));
+            }
             else
-                return key.Key == ConsoleKey.Y;
+            {
+                Console.WriteLine(message);
+            }
         }
 
         private static async Task<bool> DownloadAndInstall(PackageInfo pkg, CancellationToken token)
@@ -471,13 +506,20 @@ namespace Harvnyx
             string downloadUrl = $"{PackageDownloadBase}{pkg.Name}.dll";
             string tempFile = Path.Combine(DownloadDir, $"{pkg.Name}.dll");
             string targetFile = Path.Combine(ExpandDir, $"{pkg.Name}.dll");
+            string displayName = $"{pkg.Name}-{pkg.Version}";
 
-            // 调试信息已移除，下载进度条会显示包名
             try
             {
+                Console.WriteLine($" {displayName} 准备就绪");
+
                 using (var response = await _httpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, token))
                 {
-                    response.EnsureSuccessStatusCode();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        print.error("ept", $"包'{displayName}'无法下载，返回代码{(int)response.StatusCode}", print.ErrorCodes.NETWORK_ERROR);
+                        return false;
+                    }
+
                     var totalBytes = response.Content.Headers.ContentLength ?? pkg.Size;
                     using (var stream = await response.Content.ReadAsStreamAsync(token))
                     using (var fileStream = File.Create(tempFile))
@@ -486,6 +528,8 @@ namespace Harvnyx
                         long totalRead = 0;
                         var sw = Stopwatch.StartNew();
                         int lastPercent = -1;
+                        string lastLine = null;
+
                         while (true)
                         {
                             int read = await stream.ReadAsync(buffer, 0, buffer.Length, token);
@@ -498,19 +542,24 @@ namespace Harvnyx
                                 lastPercent = percent;
                                 double speed = totalRead / sw.Elapsed.TotalSeconds;
                                 string speedStr = speed > 0 ? FormatSize((long)speed) + "/s" : "0 B/s";
-                                string timeLeft = sw.Elapsed.TotalSeconds > 0 ? $"{(totalBytes - totalRead) / speed:F0}s" : "?s";
-                                int barLength = 35;
+                                string timeLeft = sw.Elapsed.TotalSeconds > 0 ? $"{TimeSpan.FromSeconds((totalBytes - totalRead) / speed):mm\\:ss}" : "--:--";
+                                const int barLength = 35;
                                 int filled = (int)(barLength * percent / 100);
                                 string bar = new string('#', filled) + new string('-', barLength - filled);
-                                Console.Write($"\r {pkg.Name}.dll... {FormatSize(totalRead)} / {FormatSize(totalBytes)} {speedStr} {timeLeft} [{bar}] {percent}%");
+
+                                // 格式： 包名-版本...   已下载大小   速度 耗时 [进度条] 百分比%
+                                string line = $" {displayName}... {FormatSize(totalRead),8} {speedStr,8} {timeLeft} [{bar}] {percent}%";
+                                if (lastLine != null && line.Length < lastLine.Length)
+                                    line += new string(' ', lastLine.Length - line.Length);
+                                Console.Write("\r" + line);
+                                lastLine = line;
                             }
                         }
                         Console.WriteLine();
                     }
                 }
 
-                if (File.Exists(targetFile))
-                    File.Delete(targetFile);
+                if (File.Exists(targetFile)) File.Delete(targetFile);
                 File.Move(tempFile, targetFile);
 
                 var installed = await LoadInstalled();
@@ -522,12 +571,11 @@ namespace Harvnyx
                     IsConfigKept = true
                 };
                 await SaveInstalled(installed);
-                print.success("ept", $"{pkg.Name} 安装成功");
                 return true;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is OperationCanceledException))
             {
-                print.error("ept", $"安装 {pkg.Name} 失败: {ex.Message}", print.ErrorCodes.FILE_WRITE_FAILED);
+                print.error("ept", $"安装 {displayName} 失败: {ex.Message}", print.ErrorCodes.FILE_WRITE_FAILED);
                 return false;
             }
         }
@@ -535,16 +583,12 @@ namespace Harvnyx
         private static async Task<bool> UninstallPackage(string name, bool purge, CancellationToken token)
         {
             var installed = await LoadInstalled();
-            if (!installed.ContainsKey(name))
-                return true;
+            if (!installed.ContainsKey(name)) return true;
 
             string pluginFile = Path.Combine(ExpandDir, $"{name}.dll");
             if (File.Exists(pluginFile))
             {
-                try
-                {
-                    File.Delete(pluginFile);
-                }
+                try { File.Delete(pluginFile); }
                 catch (Exception ex)
                 {
                     print.error("ept", $"删除文件 {pluginFile} 失败: {ex.Message}", print.ErrorCodes.FILE_DELETE_FAILED);
@@ -554,12 +598,10 @@ namespace Harvnyx
             if (purge)
             {
                 string configDir = Path.Combine(BaseDir, "config", name);
-                if (Directory.Exists(configDir))
-                    Directory.Delete(configDir, true);
+                if (Directory.Exists(configDir)) Directory.Delete(configDir, true);
             }
             installed.Remove(name);
             await SaveInstalled(installed);
-            print.success("ept", $"已删除 {(purge ? "并清除配置" : "")} {name}");
             return true;
         }
     }
